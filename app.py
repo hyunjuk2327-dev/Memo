@@ -17,6 +17,31 @@ CATEGORY_COLORS = {
     "육아": ("#d1fae5", "#059669"),
 }
 
+# 제목에 아래 키워드가 포함되어 있으면 해당 카테고리로 자동 분류한다.
+# 여러 카테고리의 키워드가 동시에 매칭되면 이 리스트 순서(업무 > 개인 > 공부 > 육아)상
+# 먼저 나오는 카테고리를 우선한다. 필요에 따라 키워드를 자유롭게 추가/수정하면 된다.
+CATEGORY_KEYWORDS = {
+    "업무": ["회의", "미팅", "보고서", "발표", "프로젝트", "출장", "계약",
+             "클라이언트", "매출", "야근", "기획", "결재", "이메일", "메일", "회사"],
+    "개인": ["병원", "운동", "헬스", "쇼핑", "은행", "약속", "여행", "취미",
+             "청소", "빨래", "장보기", "미용실"],
+    "공부": ["공부", "시험", "강의", "과제", "숙제", "독서", "스터디",
+             "자격증", "논문", "수업", "학습", "단어장", "문제집"],
+    "육아": ["아이", "아기", "유치원", "어린이집", "기저귀", "육아",
+             "소아과", "등원", "하원", "이유식", "놀이터", "예방접종", "자녀"],
+}
+
+
+def classify_category(title: str):
+    """제목 문자열에서 키워드를 찾아 (카테고리, 매칭된 키워드)를 반환한다.
+    매칭되는 키워드가 없으면 (None, None)을 반환한다."""
+    lowered = title.lower()
+    for category in CATEGORIES:
+        for keyword in CATEGORY_KEYWORDS.get(category, []):
+            if keyword.lower() in lowered:
+                return category, keyword
+    return None, None
+
 st.set_page_config(page_title="마이 투두", page_icon="✅", layout="centered")
 
 
@@ -61,20 +86,33 @@ if "edit_error" not in st.session_state:
     st.session_state.edit_error = None
 if "new_todo_category" not in st.session_state:
     st.session_state.new_todo_category = "개인"
+if "auto_classify_enabled" not in st.session_state:
+    st.session_state.auto_classify_enabled = True
+if "last_auto_classified" not in st.session_state:
+    st.session_state.last_auto_classified = None
 
 
 # ---- callbacks (mutate state, run before the script reruns) ----
 
 def handle_add():
     title = st.session_state.new_todo_title
-    category = st.session_state.new_todo_category
     if not title.strip():
         st.session_state.input_error = "할 일 제목을 입력해주세요."
         return
     st.session_state.input_error = None
+    trimmed = title.strip()
+
+    category = st.session_state.new_todo_category
+    st.session_state.last_auto_classified = None
+    if st.session_state.auto_classify_enabled:
+        matched_category, matched_keyword = classify_category(trimmed)
+        if matched_category:
+            category = matched_category
+            st.session_state.last_auto_classified = (matched_category, matched_keyword)
+
     st.session_state.todos.append({
         "id": str(uuid.uuid4()),
-        "title": title.strip(),
+        "title": trimmed,
         "category": category,
         "completed": False,
         "createdAt": datetime.now().isoformat(),
@@ -179,9 +217,16 @@ with st.form("add_form", clear_on_submit=False):
         "카테고리", CATEGORIES, key="new_todo_category", label_visibility="collapsed",
     )
     button_col.form_submit_button("추가", on_click=handle_add, use_container_width=True)
+    st.checkbox(
+        "🔍 제목 키워드로 카테고리 자동 분류 (매칭되는 키워드가 없으면 위에서 고른 카테고리를 사용)",
+        key="auto_classify_enabled",
+    )
 
 if st.session_state.input_error:
     st.error(st.session_state.input_error)
+elif st.session_state.last_auto_classified:
+    auto_cat, auto_keyword = st.session_state.last_auto_classified
+    st.caption(f"🔍 '{auto_keyword}' 키워드를 인식해 **{auto_cat}** 카테고리로 자동 분류했습니다.")
 
 # 카테고리 필터
 current_filter = st.radio(
